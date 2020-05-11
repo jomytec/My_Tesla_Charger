@@ -257,6 +257,8 @@ void loop()
         bChargerEnabled = false;
       }
       digitalWrite(DIG_OUT_1, LOW);         //HV OFF
+      digitalWrite(EVSE_ACTIVATE, LOW);
+      // Is this needed???? Works start and stop heat
       if (digitalRead(DIG_IN_2) == LOW)     //JOMY
         digitalWrite(EVSE_ACTIVATE, LOW);
       else
@@ -381,7 +383,10 @@ void loop()
     autoShutdown();
     watchdogReset();
     manualMode();
-    HeatCoolMode();
+    // Is this needed???? Works start and stop heat without!!
+    // Next will stop charging to work!!!!
+    if (digitalRead(DIG_IN_2) == HIGH)
+      HeatCoolMode();
     if (debug != 0)
     {
       Serial.println();
@@ -402,7 +407,7 @@ void loop()
       }
       if (digitalRead(DIG_IN_1) == HIGH)
       {
-        Serial.print("IN1:HIGH, BMS_CHG enable, ");
+        Serial.print("IN1:HIGH BMS_CHG enable, ");
       }
       else
       {
@@ -507,7 +512,6 @@ void loop()
         Serial.print(dcaclim);
       }
     }
-
   }
   DCcurrentlimit();
   ACcurrentlimit();
@@ -540,7 +544,7 @@ void loop()
       if (digitalRead(DIG_IN_2) == LOW)     //JOMY
         digitalWrite(EVSE_ACTIVATE, LOW);
       else
-        digitalWrite(EVSE_ACTIVATE, HIGH);   //JOMY
+        digitalWrite(EVSE_ACTIVATE, HIGH);   //JOMY check this!!!!!!!!
     }
   }
 }//end of void loop
@@ -636,6 +640,8 @@ void manualMode()
     }
   }
 }
+
+// Is this needed???? Works start and stop heat without!!
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///Battery heat/cool mode via Digital input 2. (AC only, All DC contactors off!)
 /////////////////////////////////////////////////////////////////////////////////////
