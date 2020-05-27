@@ -20,7 +20,8 @@
 
   joromy 2020 Mods:
   Added proximity status and more on CAN1 in external_can section
-  Added void HeatCoolMode(), will ativate EVSE when IN2 is high. (AC only, All DC contactors off!)
+  Added EVSE always on. (For HV CHG, 12 bat. CHG, HV bat heat/cool, AC only)
+  Added 3phase sense on DIG_IN_2
 
 */
 
@@ -50,8 +51,8 @@ char* daynames[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
 int evsedebug = 1; // 1 = show Proximity status and Pilot current limmits
 int debug = 1; // 1 = show phase module CAN feedback
 
-// Test DEBUG int
-int data7 = 0;
+
+int data7 = 0;      // Test DEBUG int
 
 int setting = 1;
 int incomingByte = 0;
@@ -76,17 +77,15 @@ uint16_t cablelim = 0; // Type 2 cable current limit
 
 //*********Single or Three Phase Config VARIABLE   DATA ******************
 
-//proximity status values
-#define Singlephase 0 // all parrallel on one phase Type 1
-#define Threephase 1 // one module per phase Type 2
+//Phase status values
+#define Singlephase 0 // all parrallel on one phase
+#define Threephase 1 // one module per phase
 
 //*********Charger Control VARIABLE   DATA ******************
 uint16_t modulelimcur, dcaclim = 0;
 uint16_t maxaccur = 16000; //maximum AC current in mA
 uint16_t maxdccur = 45000; //max DC current output in mA
 int activemodules, slavechargerenable = 0;
-
-
 
 //*********Feedback from charge VARIABLE   DATA ******************
 uint16_t dcvolt[3] = {0, 0, 0};//1 = 1V
@@ -190,20 +189,22 @@ void setup()
   pinMode(CHARGER2_ENABLE, OUTPUT);  //CHG2 ENABLE
   pinMode(CHARGER3_ENABLE, OUTPUT); //CHG3 ENABLE
   pinMode(CHARGER1_ACTIVATE, OUTPUT); //CHG1 ACTIVATE
-  pinMode(CHARGER2_ACTIVATE, OUTPUT);  //CHG2 ACTIVATE
+  pinMode(CHARGER2_ACTIVATE, OUTPUT); //CHG2 ACTIVATE
   pinMode(CHARGER3_ACTIVATE, OUTPUT); //CHG3 ACTIVATE
   //////////////////////////////////////////////////////////////////////////////////////
-  pinMode(DIG_IN_1, INPUT); //CHARGE ENABLE
-  pinMode(DIG_IN_2, INPUT); //BATTERY HEAT/COOL ON AC ONLY
+  pinMode(DIG_IN_1, INPUT); // CHARGE ENABLE
+  pinMode(DIG_IN_2, INPUT); // High in 3phase mode
   //////////////////////////////////////////////////////////////////////////////////////
 
   //////////////DIGITAL OUTPUTS MAPPED TO X046. 10 PIN CONNECTOR ON LEFT//////////////////////////////////////////
-  pinMode(DIG_OUT_1, OUTPUT); //OP1 - X046 PIN 6
-  pinMode(DIG_OUT_2, OUTPUT); //OP2
-  pinMode(DIG_OUT_3, OUTPUT); //OP2
-  pinMode(DIG_OUT_4, OUTPUT); //OP3
-  pinMode(EVSE_ACTIVATE, OUTPUT); //pull Pilot to 6V
+  pinMode(DIG_OUT_1, OUTPUT); //OP1 PIN 6 HV contactor
+  pinMode(DIG_OUT_2, OUTPUT); //OP2 NC
+  pinMode(DIG_OUT_3, OUTPUT); //OP2 NC
+  pinMode(DIG_OUT_4, OUTPUT); //OP3 NC
   ///////////////////////////////////////////////////////////////////////////////////////
+
+  pinMode(EVSE_ACTIVATE, OUTPUT); //pull Pilot to 6V
+  digitalWrite(EVSE_ACTIVATE, HIGH); //evse on
 
   dcaclim = maxaccur;
   bChargerEnabled = false; //are we supposed to command the charger to charge?
@@ -257,13 +258,6 @@ void loop()
         bChargerEnabled = false;
       }
       digitalWrite(DIG_OUT_1, LOW);         //HV OFF
-      digitalWrite(EVSE_ACTIVATE, LOW);
-      // Is this needed???? Works start and stop heat
-      if (digitalRead(DIG_IN_2) == LOW)     //JOMY
-        digitalWrite(EVSE_ACTIVATE, LOW);
-      else
-        digitalWrite(EVSE_ACTIVATE, HIGH);   //JOMY
-      digitalWrite(DIG_OUT_2, LOW);//AC OFF when in manual mode.
       digitalWrite(CHARGER1_ACTIVATE, LOW); //chargeph1 deactivate
       digitalWrite(CHARGER2_ACTIVATE, LOW); //chargeph2 deactivate
       digitalWrite(CHARGER3_ACTIVATE, LOW); //chargeph3 deactivate
@@ -320,8 +314,6 @@ void loop()
           }
           delay(100);
           digitalWrite(DIG_OUT_1, HIGH);//HV ON
-          digitalWrite(EVSE_ACTIVATE, HIGH); //evse on
-          digitalWrite(DIG_OUT_2, HIGH);//AC on in manual mode
         }
       }
       else
@@ -382,55 +374,39 @@ void loop()
     external_can();
     autoShutdown();
     watchdogReset();
-    manualMode();
-    // Is this needed???? Works start and stop heat without!!
-    // Next will stop charging to work!!!!
     if (digitalRead(DIG_IN_2) == HIGH)
-      HeatCoolMode();
+      parameters.phaseconfig = Threephase;
+    else
+      parameters.phaseconfig = Singlephase;
     if (debug != 0)
     {
       Serial.println();
-
       Serial.print("State:");
       Serial.print(state);
-      Serial.print(", Phases:");
-      Serial.print(parameters.phaseconfig);
+      Serial.print(", Phase:");
+      if (parameters.phaseconfig == 0)
+        Serial.print("1ph");
+      if (parameters.phaseconfig == 1)
+        Serial.print("3ph");
       Serial.print(", Modules Active:");
       Serial.print(activemodules);
       if (bChargerEnabled)
-      {
         Serial.print(", CHG:ON, ");
-      }
       else
-      {
         Serial.print(", CHG:OFF, ");
-      }
       if (digitalRead(DIG_IN_1) == HIGH)
-      {
         Serial.print("IN1:HIGH BMS_CHG enable, ");
-      }
       else
-      {
         Serial.print("IN1:LOW BMS_CHG disable, ");
-      }
       if (digitalRead(DIG_IN_2) == HIGH)
-      {
-        Serial.print("IN2:HIGH EVSE enable, ");
-      }
+        Serial.print("IN2:HIGH 3phase enable, ");
       else
-      {
-        Serial.print("IN2:LOW EVSE disable, ");
-      }
+        Serial.print("IN2:LOW 1phase enable, ");
 
       if (digitalRead(EVSE_ACTIVATE) == HIGH)
-      {
         Serial.print("EVSE_ACTIVATE:HIGH ");
-      }
       else
-      {
-        Serial.print(" EVSE_ACTIVATE:LOW ");
-      }
-
+        Serial.print("EVSE_ACTIVATE:LOW ");
 
       if (bChargerEnabled)
       {
@@ -516,14 +492,10 @@ void loop()
   DCcurrentlimit();
   ACcurrentlimit();
 
-  resetFaults();
-
-
   if (parameters.autoEnableCharger == 1)
   {
     if ((Proximity == Connected) && (LockOut == false)) //check if plugged in and not locked out
     {
-      //digitalWrite(EVSE_ACTIVATE, HIGH);//pull pilot low to indicate ready - NOT WORKING freezes PWM reading
       if (accurlim > 1400) // one amp or more active modules
       {
         if (state == 0)
@@ -535,66 +507,25 @@ void loop()
           }
         }
       }
-      digitalWrite(DIG_OUT_2, HIGH); //enable AC present indication
     }
     else // unplugged or buton pressed stop charging
     {
       state = 0;
-      digitalWrite(DIG_OUT_2, LOW); //disable AC present indication
-      if (digitalRead(DIG_IN_2) == LOW)     //JOMY
-        digitalWrite(EVSE_ACTIVATE, LOW);
-      else
-        digitalWrite(EVSE_ACTIVATE, HIGH);   //JOMY check this!!!!!!!!
     }
   }
 }//end of void loop
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//If a charger power module is running and faults out we want to reset and go again otherwise charger can just sit there and not finish a charge.
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void resetFaults()
-{
-  if ((bChargerEnabled == true) && (ACpres[0] == true) && (ModFlt[0] == true) && ((parameters.enabledChargers == 1) || (parameters.enabledChargers == 12) || (parameters.enabledChargers == 13) || (parameters.enabledChargers == 123)))
-  {
-    //if these conditions are met then phase one is enabled, has ac present and has entered a fault state so we want to reset.
-    state = 0;
-    digitalWrite(DIG_OUT_2, LOW); //disable AC present indication;
-    //  digitalWrite(EVSE_ACTIVATE, LOW);
-  }
-  if ((bChargerEnabled == true) && (ACpres[1] == true) && (ModFlt[1] == true) && ((parameters.enabledChargers == 2) || (parameters.enabledChargers == 12) || (parameters.enabledChargers == 23) || (parameters.enabledChargers == 123)))
-  {
-    //if these conditions are met then phase two is enabled, has ac present and has entered a fault state so we want to reset.
-    state = 0;
-    digitalWrite(DIG_OUT_2, LOW); //disable AC present indication;
-    //digitalWrite(EVSE_ACTIVATE, LOW);
-  }
-  if ((bChargerEnabled == true) && (ACpres[2] == true) && (ModFlt[2] == true) && ((parameters.enabledChargers == 3) || (parameters.enabledChargers == 13) || (parameters.enabledChargers == 23) || (parameters.enabledChargers == 123)))
-  {
-    //if these conditions are met then phase three is enabled, has ac present and has entered a fault state so we want to reset.
-    state = 0;
-    digitalWrite(DIG_OUT_2, LOW); //disable AC present indication;
-    //digitalWrite(EVSE_ACTIVATE, LOW);
-  }
-
-
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //If the HV voltage exceeds the tVolt setpoint we want to shut down the charger and not re enable until the charge plug
 //is removed and re connected. For now we just read the voltage on phase module one.
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void autoShutdown() {
+void autoShutdown()
+{
   if ((bChargerEnabled == true) && (LockOut == false)) //if charger is running and we are not locked out ...
   {
     if (dcvolt[0] > (parameters.tVolt * 0.01)) //and if we exceed tVolt...
     {
       LockOutCnt++; //increment the lockout counter
-      //      LockOut=true; //lockout and shutdown
-      //    state=0;
     }
     else
     {
@@ -611,58 +542,6 @@ void autoShutdown() {
     LockOutCnt = 0;
   }
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///Manual control mode via Digital input 1. Special case for A.Rish.
-/////////////////////////////////////////////////////////////////////////////////////
-void manualMode()
-{
-
-  if (parameters.autoEnableCharger == 0)//if we are not in auto mode ...
-  {
-    if (state == 0)//....and if we are currently turned off....
-    {
-      if (digitalRead(DIG_IN_1) == HIGH && (LockOut == false)) //...and if digital one is high....
-      {
-        state = 2;// initialize modules. Fire up the charger.
-        tboot = millis();
-      }
-    }
-
-
-
-    if (digitalRead(DIG_IN_1) == LOW)//...if brought low then we shutoff the charger.
-    {
-      state = 0;//
-      LockOut = false; //release lockout when dig 1 in is brought low.
-    }
-  }
-}
-
-// Is this needed???? Works start and stop heat without!!
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///Battery heat/cool mode via Digital input 2. (AC only, All DC contactors off!)
-/////////////////////////////////////////////////////////////////////////////////////
-void HeatCoolMode()
-{
-  if (state == 0)//....and if we are currently turned off....
-  {
-    if (digitalRead(DIG_IN_2) == HIGH && (LockOut == false)) //...and if digital two is high....
-    {
-      digitalWrite(EVSE_ACTIVATE, HIGH); //evse on, pull Pilot to 6V
-      digitalWrite(DIG_OUT_2, HIGH); //enable AC present indication
-    }
-  }
-
-  if (digitalRead(DIG_IN_2) == LOW)//...if brought low then we shutoff EVSE.
-  {
-    state = 0;//
-    LockOut = false; //release lockout when dig 2 in is brought low.
-  }
-}
-
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -975,28 +854,23 @@ void external_can()
   Can1.sendFrame(outframe);
 
 
-  ///CAN SEND TEST//////////////////////////////////////////////////////////////////////
-  if (cantx_test)
-  {
-    //    delay(1000);
-    outframe.id = 0x3D8;
-    outframe.length = 8;            // Data payload 8 bytes
-    outframe.extended = 0;          // Extended addresses - 0=11-bit 1=29bit
-    outframe.rtr = 0;               // No request
-    outframe.data.bytes[0] = 0x01;
-    outframe.data.bytes[1] = 0x02;
-    outframe.data.bytes[2] = 0x03;
-    outframe.data.bytes[3] = 0x04;
-    outframe.data.bytes[4] = 0x05;
-    outframe.data.bytes[5] = (Proximity);
-    outframe.data.bytes[6] = (parameters.canControl);
-    outframe.data.bytes[7] = (data7);
-    Can1.sendFrame(outframe);
-    data7 = (data7 + 1);            // Test if all packets are received
-    if (data7 > 255)
-      data7 = 0;
-  }
-
+  ///External CAN1 SEND //////////////////////////////////////////////////////////////////////
+  outframe.id = 0x3D8;
+  outframe.length = 8;            // Data payload 8 bytes
+  outframe.extended = 0;          // Extended addresses - 0=11-bit 1=29bit
+  outframe.rtr = 0;               // No request
+  outframe.data.bytes[0] = 0x01;
+  outframe.data.bytes[1] = 0x02;
+  outframe.data.bytes[2] = 0x03;
+  outframe.data.bytes[3] = 0x04;
+  outframe.data.bytes[4] = (parameters.phaseconfig);
+  outframe.data.bytes[5] = (Proximity);
+  outframe.data.bytes[6] = (parameters.canControl);
+  outframe.data.bytes[7] = (data7);
+  Can1.sendFrame(outframe);
+  data7 = (data7 + 1);            // Test if all packets are received
+  if (data7 > 255)
+    data7 = 0;
 
   ////////////////////////////////////////////////////////////////////
 
@@ -1033,11 +907,6 @@ void evseread()
 {
   uint16_t val = 0;
   val = analogRead(EVSE_PROX);     // read the input pin
-
-
-
-
-
 
   if ( parameters.type == 2)
   {
@@ -1212,7 +1081,7 @@ void canextdecode(CAN_FRAME & frame)
       {
         if (state == 0)
         {
-          state = 2;
+          state = 2;   // initialize modules. Fire up the charger.
           tboot = millis();
         }
       }
@@ -1245,7 +1114,7 @@ void canextdecode(CAN_FRAME & frame)
       {
         if (state == 0)
         {
-          state = 2;
+          state = 2;  // initialize modules. Fire up the charger.
           tboot = millis();
         }
       }
@@ -1302,7 +1171,7 @@ void menu()
           candebug = 0;
         }
         menuload = 0;
-        incomingByte = 'd';
+        incomingByte = 'd';      // Carriage Return
         break;
 
       case 'b'://a for auto enable
@@ -1312,7 +1181,7 @@ void menu()
           evsedebug = 0;
         }
         menuload = 0;
-        incomingByte = 'd';
+        incomingByte = 'd';      // Carriage Return
         break;
 
 
@@ -1323,7 +1192,7 @@ void menu()
           parameters.autoEnableCharger = 0;
         }
         menuload = 0;
-        incomingByte = 'd';
+        incomingByte = 'd';      // Carriage Return
         break;
 
       case '2'://e for enabling chargers followed by numbers to indicate which ones to run
@@ -1331,7 +1200,7 @@ void menu()
         {
           parameters.enabledChargers = Serial.parseInt();
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
@@ -1344,7 +1213,7 @@ void menu()
             parameters.canControl = 0;
           }
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
@@ -1361,7 +1230,7 @@ void menu()
             parameters.type = 2;
           }
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
@@ -1378,7 +1247,7 @@ void menu()
             parameters.phaseconfig = 0;
           }
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
       case '6'://v for voltage setting in whole numbers
@@ -1386,7 +1255,7 @@ void menu()
         {
           parameters.voltSet = (Serial.parseInt() * 100);
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
@@ -1395,7 +1264,7 @@ void menu()
         {
           parameters.currReq = (Serial.parseInt() * 1500);
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
@@ -1405,7 +1274,7 @@ void menu()
           parameters.can0Speed = long(Serial.parseInt() * 1000);
           Can1.begin(parameters.can0Speed);
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
@@ -1416,7 +1285,7 @@ void menu()
 
           Can1.begin(parameters.can1Speed);
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
       /*
@@ -1425,7 +1294,7 @@ void menu()
         {
         rtc_clock.set_time(Serial.parseInt(), Serial.parseInt(), Serial.parseInt());
         menuload = 0;
-        incomingByte = 'd';
+        incomingByte = 'd';      // Carriage Return
         }
         break;
         case 'd': //c for time
@@ -1433,7 +1302,7 @@ void menu()
         {
         rtc_clock.set_date(Serial.parseInt(), Serial.parseInt(), Serial.parseInt());
         menuload = 0;
-        incomingByte = 'd';
+        incomingByte = 'd';      // Carriage Return
         }
         break;
       */
@@ -1442,7 +1311,7 @@ void menu()
         {
           parameters.tVolt = (Serial.parseInt() * 100);
           menuload = 0;
-          incomingByte = 'd';
+          incomingByte = 'd';      // Carriage Return
         }
         break;
 
