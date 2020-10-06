@@ -18,7 +18,7 @@
   -Added manual control mode for use of charger without EVSE. Digital one in when brought to +12v commands the charger to start
   and when brought low commands charger off. This mode also control HVDC via digital out 1 and AC mains via a contactor via Digital out 2.-Untested.
 
-  joromy 2020 Mods:
+  joromy 2020 Mods: Ver: 0.5
   Added proximity status and more on CAN1 in external_can section
   Added EVSE always on. (For HV CHG, 12 bat. CHG, HV bat heat/cool, AC only)
   Added 3phase sense on DIG_IN_2
@@ -77,9 +77,9 @@ uint16_t cablelim = 0; // Type 2 cable current limit
 
 //*********Single or Three Phase Config VARIABLE   DATA ******************
 
-//Phase status values
-#define Singlephase 0 // all parrallel on one phase
-#define Threephase 1 // one module per phase
+//Phase status values JRM remove
+//#define Singlephase 0 // all parrallel on one phase
+//#define Threephase 1 // one module per phase
 
 //*********Charger Control VARIABLE   DATA ******************
 uint16_t modulelimcur, dcaclim = 0;
@@ -144,7 +144,8 @@ void setup()
     parameters.tVolt = 34000;//1 = 0.01V
     parameters.autoEnableCharger = 0; //disable auto start, proximity and pilot control
     parameters.canControl = 0; //0 disabled can control, 1 master, 3 slave
-    parameters.phaseconfig = Threephase; //AC input configuration
+//    JRM remove
+//    parameters.phaseconfig = Threephase; //AC input configuration
     parameters.type = 2; //Socket type1 or 2
     EEPROM.write(0, parameters);
   }
@@ -375,18 +376,18 @@ void loop()
     autoShutdown();
     watchdogReset();
     if (digitalRead(DIG_IN_2) == HIGH)
-      parameters.phaseconfig = Threephase;
+      parameters.phaseconfig = 1; // Threephase
     else
-      parameters.phaseconfig = Singlephase;
+      parameters.phaseconfig = 0; // Singlephase
     if (debug != 0)
     {
       Serial.println();
       Serial.print("State:");
       Serial.print(state);
       Serial.print(", Phase:");
-      if (parameters.phaseconfig == 0)
+      if (parameters.phaseconfig == 0) // Singlephase
         Serial.print("1ph");
-      if (parameters.phaseconfig == 1)
+      if (parameters.phaseconfig == 1) // Threephase
         Serial.print("3ph");
       Serial.print(", Modules Active:");
       Serial.print(activemodules);
@@ -454,6 +455,7 @@ void loop()
       if (evsedebug != 0)
       {
         Serial.println();
+        Serial.println("Ver: 0.5");
         Serial.print("millis:");
         Serial.print(millis());
         Serial.println();
@@ -806,7 +808,7 @@ void external_can()
   }
   outframe.data.bytes[0] = y / 3;
 
-  if (parameters.phaseconfig == Singlephase)
+  if (parameters.phaseconfig == 0) // Singlephase
   {
     for (int x = 0; x < 3; x++)
     {
@@ -982,7 +984,7 @@ void ACcurrentlimit()
     {
       accurlim = 0;
     }
-    if (parameters.phaseconfig == 0)
+    if (parameters.phaseconfig == 0) // Singlephase
     {
       modulelimcur = (accurlim / 3) * 1.5 ; // all module parallel, sharing AC input current
     }
@@ -997,7 +999,7 @@ void ACcurrentlimit()
   }
   else
   {
-    if (parameters.phaseconfig == 0)
+    if (parameters.phaseconfig == 0) // Singlephase
     {
       modulelimcur = (parameters.currReq / 3); // all module parallel, sharing AC input current
     }
@@ -1020,7 +1022,7 @@ void ACcurrentlimit()
     }
   }
 
-  if (parameters.phaseconfig == 1)
+  if (parameters.phaseconfig == 1) // Threephase
   {
     if (modulelimcur > (dcaclim * 1.5)) //if more current then max per module or limited by DC output current
     {
@@ -1031,7 +1033,7 @@ void ACcurrentlimit()
       modulelimcur = parameters.currReq;
     }
   }
-  if (parameters.phaseconfig == 0)
+  if (parameters.phaseconfig == 0) // Singlephase
   {
     if (modulelimcur > (dcaclim * 0.5)) //if more current then max per module or limited by DC output current
     {
@@ -1240,11 +1242,11 @@ void menu()
           parameters.phaseconfig = Serial.parseInt() - 1;
           if ( parameters.phaseconfig == 2)
           {
-            parameters.phaseconfig = 1;
+            parameters.phaseconfig = 1; // Threephase
           }
           if (parameters.phaseconfig == 0)
           {
-            parameters.phaseconfig = 0;
+            parameters.phaseconfig = 0; // Singlephase
           }
           menuload = 0;
           incomingByte = 'd';      // Carriage Return
